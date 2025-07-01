@@ -5,24 +5,76 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'add_post_screen.dart';
-import 'auth_screen.dart'; // Import UserProfileScreen
+import 'auth_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // Get the current authenticated user
-    final User? currentUser = FirebaseAuth.instance.currentUser;
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
+class _HomeScreenState extends State<HomeScreen> {
+  final User? currentUser = FirebaseAuth.instance.currentUser;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  bool _isSearching = false; // To control visibility of search bar
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen for changes in the search input
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text.trim();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SocialSphere Feed'),
+        title: _isSearching
+            ? TextField(
+          controller: _searchController,
+          decoration: const InputDecoration(
+            hintText: 'Search posts or users...',
+            hintStyle: TextStyle(color: Colors.black),
+            border: InputBorder.none,
+            prefixIcon: Icon(Icons.search, color: Colors.black),
+          ),
+          style: const TextStyle(color: Colors.black, fontSize: 18),
+          cursorColor: Colors.black,
+        )
+            : const Text('SocialSphere Feed'),
         backgroundColor: Theme.of(context).primaryColor,
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          // Profile Button: Added to navigate to UserProfileScreen
+          // Toggle Search Bar Visibility
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            tooltip: _isSearching ? 'Close Search' : 'Search Posts',
+            onPressed: () {
+              setState(() {
+                _isSearching = !_isSearching;
+                if (!_isSearching) {
+                  _searchController.clear(); // Clear search text when closing
+                  FocusScope.of(context).unfocus(); // Dismiss keyboard
+                } else {
+                  FocusScope.of(context).requestFocus(); // Request focus to open keyboard
+                }
+              });
+            },
+          ),
+          // Profile Button
           IconButton(
             icon: const Icon(Icons.person),
             tooltip: 'My Profile',
@@ -38,7 +90,6 @@ class HomeScreen extends StatelessWidget {
             tooltip: 'Logout',
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
-              // Navigate back to the AuthScreen after logout
               Navigator.of(context).pushReplacement(
                 MaterialPageRoute(builder: (context) => const AuthScreen()),
               );
@@ -47,36 +98,48 @@ class HomeScreen extends StatelessWidget {
         ],
       ),
       body: StreamBuilder<QuerySnapshot>(
-        // Listen to changes in the 'posts' collection, ordered by creation time
-        stream: FirebaseFirestore.instance
+        // Conditionally build the query based on search input
+        stream: _searchQuery.isEmpty
+            ? FirebaseFirestore.instance
             .collection('posts')
-            .orderBy('createdAt', descending: true) // Newest posts first
+            .orderBy('createdAt', descending: true)
+            .snapshots()
+            : FirebaseFirestore.instance
+            .collection('posts')
+        // Search by 'text' field (prefix match)
+            .where('text', isGreaterThanOrEqualTo: _searchQuery)
+            .where('text', isLessThanOrEqualTo: _searchQuery + '\uf8ff')
+        // Note: Firestore does not support OR queries directly across different fields
+        // For comprehensive search, you'd combine results from multiple queries
+        // or use a dedicated search service (e.g., Algolia, ElasticSearch).
+        // For now, this will prioritize text search. If you need to search both
+        // text and username, consider a combined field or client-side filtering
+        // on a broader initial fetch (less efficient for large datasets).
+            .orderBy('text', descending: true) // Must order by the field in where clause
             .snapshots(),
         builder: (ctx, AsyncSnapshot<QuerySnapshot> postsSnapshot) {
           if (postsSnapshot.connectionState == ConnectionState.waiting) {
-            // Show a loading indicator while data is being fetched
             return const Center(
               child: CircularProgressIndicator(),
             );
           }
           if (postsSnapshot.hasError) {
-            // Display an error message if something went wrong
             return Center(
               child: Text('Error: ${postsSnapshot.error}'),
             );
           }
           if (!postsSnapshot.hasData || postsSnapshot.data!.docs.isEmpty) {
-            // Display a message if there are no posts yet
-            return const Center(
+            return Center(
               child: Text(
-                'No posts yet! Be the first to share something.',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
+                _searchQuery.isEmpty
+                    ? 'No posts yet! Be the first to share something.'
+                    : 'No posts found matching "$_searchQuery".',
+                style: const TextStyle(fontSize: 16, color: Colors.grey),
                 textAlign: TextAlign.center,
               ),
             );
           }
 
-          // If data is available, build a ListView of PostCards
           final loadedPosts = postsSnapshot.data!.docs;
 
           return ListView.builder(
@@ -86,7 +149,6 @@ class HomeScreen extends StatelessWidget {
               final postData = loadedPosts[index].data() as Map<String, dynamic>;
               final postId = loadedPosts[index].id;
 
-              // Pass post data and current user ID to PostCard
               return PostCard(
                 postId: postId,
                 postData: postData,
@@ -96,10 +158,8 @@ class HomeScreen extends StatelessWidget {
           );
         },
       ),
-      // Floating action button for creating new posts
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // Navigate to the AddPostScreen
           Navigator.of(context).push(
             MaterialPageRoute(builder: (context) => const AddPostScreen()),
           );

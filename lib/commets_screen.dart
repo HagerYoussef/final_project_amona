@@ -52,8 +52,11 @@ class _CommentsScreenState extends State<CommentsScreen> {
     final user = _auth.currentUser;
     if (user == null) {
       _showMessageBox('Login Required', 'You must be logged in to comment.');
+      print('DEBUG: No user is logged in.');
       return;
     }
+    print('DEBUG: Current User UID: ${user.uid}');
+    print('DEBUG: Post ID: ${widget.postId}');
 
     setState(() {
       _isSendingComment = true;

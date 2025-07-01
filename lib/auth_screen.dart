@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import 'home_screen.dart';
 
@@ -16,7 +17,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _firestore = FirebaseFirestore.instance;
   final _formKey = GlobalKey<FormState>();
 
-  bool _isLogin = true; // To toggle between login and registration
+  bool _isLogin = true;
   String _email = '';
   // Use TextEditingControllers for password fields for real-time validation
   final TextEditingController _passwordController = TextEditingController();
@@ -136,6 +137,90 @@ class _AuthScreenState extends State<AuthScreen> {
       });
     }
   }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() {
+      _isLoading = true; // Show loading indicator
+      _errorMessage = null; // Clear any previous error messages
+    });
+
+    try {
+      // Initialize GoogleSignIn with the webClientId for web platforms.
+      // You get this webClientId from your Firebase project settings -> Project settings -> General -> Your apps -> Web app.
+      // It's usually found under 'Web API Key' or 'Web client ID'
+      // IMPORTANT: Replace 'YOUR_WEB_CLIENT_ID_HERE' with your actual Web client ID.
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        clientId: '1:590116494094:web:01231cc9d7f00f6149555f', // <--- ADD THIS LINE FOR WEB
+      );
+
+      // 1. Begin the interactive Google Sign-In process.
+      // This will open a browser or a system dialog for the user to choose their Google account.
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn(); // Use the initialized instance
+
+      // If googleUser is null, the user canceled the sign-in process.
+      if (googleUser == null) {
+        setState(() {
+          _isLoading = false; // Hide loading indicator
+        });
+        return; // Exit the function
+      }
+
+      // 2. Obtain the authentication details (accessToken and idToken) from the Google Sign-In result.
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      // 3. Create a new Firebase credential using the Google ID Token and Access Token.
+      // This credential will be used to sign in to Firebase.
+      final AuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // 4. Sign in to Firebase Authentication with the Google credential.
+      // This links the Google account to a Firebase user.
+      UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+
+      // 5. Check if this is a new user signing in for the first time via Google.
+      // If it's a new user, save their basic profile data to your Firestore 'users' collection.
+      if (userCredential.additionalUserInfo?.isNewUser == true) {
+        final User? user = userCredential.user;
+        if (user != null) {
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+            'username': user.displayName ?? user.email?.split('@')[0] ?? 'Google User',
+            'email': user.email,
+            'firstName': user.displayName?.split(' ').first ?? '',
+            'lastName': user.displayName?.split(' ').last ?? '',
+            'profileImageUrl': user.photoURL, // Save Google profile picture URL
+            'createdAt': Timestamp.now(),
+          });
+        }
+      }
+
+      // 6. If the sign-in is successful, navigate the user to the HomeScreen.
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
+    } on FirebaseAuthException catch (e) {
+      // Handle Firebase Authentication specific errors.
+      String message = 'Google Sign-In failed: ${e.message}';
+      if (e.code == 'account-exists-with-different-credential') {
+        message = 'An account already exists with the same email address but different sign-in credentials. Please sign in using your existing method (e.g., Email/Password).';
+      }
+      setState(() {
+        _errorMessage = message; // Set error message to display
+      });
+      _showMessageBox('Google Sign-In Error', message); // Show error in a dialog
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'An unexpected error occurred during Google Sign-In: $e';
+      });
+      _showMessageBox('Error', 'An unexpected error occurred: $e'); // Show error in a dialog
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -328,6 +413,26 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
+                        ElevatedButton.icon(
+                          onPressed: _signInWithGoogle, // This calls the Google Sign-In logic
+                          icon: Image.network(
+                            'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/2048px-Google_%22G%22_logo.svg.png',
+                            height: 24,
+                            width: 24,
+                          ),
+                          label: const Text('Sign in with Google'),
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(50),
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black87,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: const BorderSide(color: Colors.grey),
+                            ),
+                            elevation: 3,
+                            shadowColor: Colors.grey.withOpacity(0.5),
+                          ),
+                        ),
                       ],
                     ),
                   ),

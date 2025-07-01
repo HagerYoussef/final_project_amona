@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import 'auth_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -13,7 +12,6 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // Navigate to the authentication screen after a delay
     Future.delayed(const Duration(seconds: 3), () {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const AuthScreen()),
@@ -24,22 +22,20 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.blue.shade700, // A nice blue background
+      backgroundColor: Colors.blue.shade700,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // App Logo/Image (Placeholder)
-            // You can replace this with an actual image asset
             Icon(
-              Icons.people_alt, // Example icon, replace with your app logo
+              Icons.people_alt,
               size: 100,
               color: Colors.white,
             ),
             const SizedBox(height: 20),
             // App Title/Slogan
             const Text(
-              'SocialSphere', // Your app title
+              'SocialSphere',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 36,
@@ -49,7 +45,7 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
             const SizedBox(height: 10),
             const Text(
-              'Connect. Share. Explore.', // Your app slogan
+              'Connect. Share. Explore.',
               style: TextStyle(
                 color: Colors.white70,
                 fontSize: 18,

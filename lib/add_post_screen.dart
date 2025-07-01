@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'home_screen.dart';
+
 class AddPostScreen extends StatefulWidget {
   const AddPostScreen({super.key});
 
@@ -57,7 +59,9 @@ class _AddPostScreenState extends State<AddPostScreen> {
       });
 
       _showMessageBox('Success', 'Post created successfully!');
-      Navigator.of(context).pop();
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
     } on FirebaseException catch (e) {
       _showMessageBox('Error', 'Failed to create post: ${e.message}');
     } catch (e) {

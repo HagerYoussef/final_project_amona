@@ -54,28 +54,14 @@ class MyApp extends StatelessWidget {
         ),
         cardTheme: CardTheme(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15.0), // Rounded corners for cards
+            borderRadius: BorderRadius.circular(15.0),
           ),
           elevation: 3,
           margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
         ),
       ),
       // Use a FutureBuilder to check authentication state and navigate accordingly
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          // Show splash screen while checking auth state
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const SplashScreen();
-          }
-          // If user is logged in, go to HomeScreen
-          if (snapshot.hasData && snapshot.data != null) {
-            return const HomeScreen(); // Navigate to HomeScreen if authenticated
-          }
-          // If no user is logged in, go to AuthScreen
-          return const AuthScreen(); // Navigate to AuthScreen if not authenticated
-        },
-      ),
+      home: const SplashScreen(),
     );
   }
 }

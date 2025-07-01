@@ -1,6 +1,8 @@
+import 'package:final_project_amona/post_card.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 import 'auth_screen.dart';
 import 'edit_profile_screen.dart';
@@ -34,18 +36,22 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
 
     try {
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).get();
-      if (userDoc.exists) {
-        setState(() {
-          _userData = userDoc.data();
-          _isLoadingUserData = false;
-        });
-      } else {
-        setState(() {
-          _errorMessage = "User data not found in Firestore.";
-          _isLoadingUserData = false;
-        });
-      }
+      // Listen to real-time updates for user data
+      FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).snapshots().listen((userDoc) {
+        if (mounted) { // Check if the widget is still in the widget tree
+          if (userDoc.exists) {
+            setState(() {
+              _userData = userDoc.data();
+              _isLoadingUserData = false;
+            });
+          } else {
+            setState(() {
+              _errorMessage = "User data not found in Firestore.";
+              _isLoadingUserData = false;
+            });
+          }
+        }
+      });
     } catch (e) {
       setState(() {
         _errorMessage = "Failed to load user data: $e";
@@ -126,10 +132,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   CircleAvatar(
                     radius: 60,
                     backgroundColor: Colors.white.withOpacity(0.9),
-                    backgroundImage: _userData?['profileImageUrl'] != null
+                    backgroundImage: _userData?['profileImageUrl'] != null && _userData!['profileImageUrl'].isNotEmpty
                         ? NetworkImage(_userData!['profileImageUrl'])
                         : null,
-                    child: _userData?['profileImageUrl'] == null
+                    child: (_userData?['profileImageUrl'] == null || _userData!['profileImageUrl'].isEmpty)
                         ? Icon(Icons.person, size: 70, color: Theme.of(context).primaryColor)
                         : null,
                   ),
@@ -151,7 +157,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  if (_userData?['firstName'] != null && _userData?['lastName'] != null)
+                  if (_userData?['firstName'] != null && _userData?['lastName'] != null &&
+                      _userData!['firstName'].isNotEmpty && _userData!['lastName'].isNotEmpty)
                     Text(
                       '${_userData!['firstName']} ${_userData!['lastName']}',
                       style: TextStyle(
@@ -173,7 +180,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       );
                       // If profile was updated, refresh user data
                       if (result == true) {
-                        _fetchUserData();
+                        // _fetchUserData() is now listening to snapshots, so data will auto-refresh
+                        // No explicit call needed unless you want to force a re-fetch.
                       }
                     },
                     icon: const Icon(Icons.edit, color: Colors.blue),
@@ -191,8 +199,170 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 20),
+            // User's Posts Section
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'My Posts',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            const Divider(thickness: 1, indent: 16, endIndent: 16),
+            StreamBuilder<QuerySnapshot>(
+              // Fetch only posts by the current user
+              stream: FirebaseFirestore.instance
+                  .collection('posts')
+                  .where('userId', isEqualTo: currentUser?.uid)
+                  .orderBy('createdAt', descending: true)
+                  .snapshots(),
+              builder: (ctx, AsyncSnapshot<QuerySnapshot> postsSnapshot) {
+                if (postsSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(20.0),
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                }
+                if (postsSnapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20.0),
+                      child: Text('Error loading posts: ${postsSnapshot.error}'),
+                    ),
+                  );
+                }
+                if (!postsSnapshot.hasData || postsSnapshot.data!.docs.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(20.0),
+                      child: Text(
+                        'You haven\'t posted anything yet.',
+                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+
+                final loadedPosts = postsSnapshot.data!.docs;
+
+                return ListView.builder(
+                  shrinkWrap: true, // Important for nested ListView
+                  physics: const NeverScrollableScrollPhysics(), // Disable scrolling for nested ListView
+                  itemCount: loadedPosts.length,
+                  itemBuilder: (ctx, index) {
+                    final postData = loadedPosts[index].data() as Map<String, dynamic>;
+                    final postId = loadedPosts[index].id;
+
+                    return Column(
+                      children: [
+                        PostCard(
+                          postId: postId,
+                          postData: postData,
+                          currentUserId: currentUser?.uid,
+                        ),
+                        // Display comments directly under each post on profile page
+                        _buildCommentsSection(postId),
+                        const SizedBox(height: 20), // Space between posts and comments
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  // Helper widget to build comments section for a post on the profile page
+  Widget _buildCommentsSection(String postId) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Comments:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('posts')
+                .doc(postId)
+                .collection('comments')
+                .orderBy('createdAt', descending: false)
+                .snapshots(),
+            builder: (ctx, AsyncSnapshot<QuerySnapshot> commentsSnapshot) {
+              if (commentsSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (commentsSnapshot.hasError) {
+                return Text('Error loading comments: ${commentsSnapshot.error}');
+              }
+              if (!commentsSnapshot.hasData || commentsSnapshot.data!.docs.isEmpty) {
+                return const Text('No comments on this post yet.', style: TextStyle(color: Colors.grey));
+              }
+
+              final loadedComments = commentsSnapshot.data!.docs;
+              return ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: loadedComments.length,
+                itemBuilder: (ctx, index) {
+                  final commentData = loadedComments[index].data() as Map<String, dynamic>;
+                  final String username = commentData['username'] ?? 'Anonymous';
+                  final String commentText = commentData['text'] ?? '';
+                  final Timestamp? createdAt = commentData['createdAt'] as Timestamp?;
+
+                  String formattedDate = '';
+                  if (createdAt != null) {
+                    formattedDate = DateFormat('MMM d,EEEE \'at\' h:mm a').format(createdAt.toDate());
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const CircleAvatar(
+                          radius: 12,
+                          backgroundColor: Colors.blueGrey,
+                          child: Icon(Icons.person, size: 14, color: Colors.white),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '$username • $formattedDate',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                              Text(
+                                commentText,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ],
       ),
     );
   }
